@@ -1,0 +1,67 @@
+---
+# deploy-frontend.yml
+# Called by Jenkins pipeline with:
+#   ansible-playbook deploy-frontend.yml \
+#     -i inventory/hosts.ini \
+#     -e "dockerhub_username=myuser" \
+#     -e "frontend_image_tag=42"
+
+- name: Deploy Frontend React/nginx Container
+  hosts: frontend
+  become: true
+
+  vars:
+    container_name: "cicd-frontend"
+    image_full:     "{{ dockerhub_username }}/cicd-frontend:{{ frontend_image_tag }}"
+
+  tasks:
+
+    - name: Ensure Docker service is running
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Pull frontend Docker image from DockerHub
+      community.docker.docker_image:
+        name:         "{{ image_full }}"
+        source:       pull
+        force_source: true
+
+    - name: Stop and remove existing container (if running)
+      community.docker.docker_container:
+        name:       "{{ container_name }}"
+        state:      absent
+        force_kill: true
+      ignore_errors: true
+
+    - name: Start frontend container
+      community.docker.docker_container:
+        name:           "{{ container_name }}"
+        image:          "{{ image_full }}"
+        state:          started
+        restart_policy: "{{ docker_restart_policy }}"
+        ports:
+          - "{{ frontend_port }}:80"
+        healthcheck:
+          test:         ["CMD", "wget", "-qO-", "http://localhost/"]
+          interval:     30s
+          timeout:      5s
+          retries:      3
+          start_period: 20s
+
+    - name: Wait for frontend to return HTTP 200
+      uri:
+        url:         "http://localhost:{{ frontend_port }}/"
+        status_code: 200
+      register: http
+      until:    http.status == 200
+      retries:  12
+      delay:    5
+
+    - name: Print deployment summary
+      debug:
+        msg:
+          - "Frontend deployed: {{ image_full }}"
+          - "Container: {{ container_name }}  Port: {{ frontend_port }}"
+          - "HTTP status: {{ http.status }}"

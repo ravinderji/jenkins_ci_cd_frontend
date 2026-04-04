@@ -1,0 +1,6 @@
+---
+# Defaults — overridden at runtime by Jenkins -e flags
+dockerhub_username:    "your_dockerhub_username"
+frontend_image_tag:    "latest"
+frontend_port:         80
+docker_restart_policy: "unless-stopped"
